@@ -2,12 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>QR AR Art</title>
+    <title>QR NFT AR Test</title>
 
     <!-- A-Frame -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
-    <!-- AR.js with Image Tracking (NFT) + Location-based -->
+    <!-- AR.js with NFT (image tracking) -->
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
 
     <style>
@@ -16,18 +16,12 @@
   </head>
   <body>
     <a-scene
-      embedded
       vr-mode-ui="enabled: false"
+      embedded
       renderer="logarithmicDepthBuffer: true; antialias: true;"
-      arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled: false;"
+      arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled: true;"
     >
-      <!-- Assets -->
-      <a-assets>
-        <!-- update this to your model -->
-        <a-asset-item id="artModel" src="models/artpiece.glb"></a-asset-item>
-      </a-assets>
-
-      <!-- Anchor: your QR NFT marker -->
+      <!-- NFT marker anchored to your QR -->
       <a-nft
         type="nft"
         url="markers/qr-art-01/qr-art-01"
@@ -35,17 +29,33 @@
         smoothCount="10"
         smoothTolerance="0.01"
         smoothThreshold="5"
+        emitevents="true"
       >
-        <a-entity
-          gltf-model="#artModel"
-          scale="0.5 0.5 0.5"
-          position="0 0 0"
-          rotation="0 0 0"
-        ></a-entity>
+        <!-- super obvious test object -->
+        <a-box
+          position="0 0.5 0"
+          depth="0.5"
+          height="0.5"
+          width="0.5"
+        ></a-box>
       </a-nft>
 
-      <!-- Camera -->
       <a-entity camera></a-entity>
     </a-scene>
+
+    <script>
+      // simple marker debug in console
+      window.addEventListener('DOMContentLoaded', () => {
+        const marker = document.querySelector('a-nft');
+        if (!marker) return;
+
+        marker.addEventListener('markerFound', () => {
+          console.log('NFT marker FOUND');
+        });
+        marker.addEventListener('markerLost', () => {
+          console.log('NFT marker LOST');
+        });
+      });
+    </script>
   </body>
 </html>
