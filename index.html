@@ -96,5 +96,45 @@
         });
       });
     </script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const marker = document.querySelector('#qrMarker');
+    const markerBox = document.querySelector('#markerBox');
+
+    if (!marker) {
+      console.warn('qrMarker not found in DOM');
+      return;
+    }
+
+    // Fired when NFT descriptors are fully loaded
+    window.addEventListener('arjs-nft-loaded', () => {
+      console.log('📦 arjs-nft-loaded (descriptors ready)');
+    });
+
+    marker.addEventListener('markerFound', () => {
+      console.log('✅ markerFound');
+      console.log('  marker.getAttribute("visible") =', marker.getAttribute('visible'));
+      console.log('  marker.object3D.visible       =', marker.object3D.visible);
+      if (markerBox) {
+        console.log('  markerBox.getAttribute("visible") =', markerBox.getAttribute('visible'));
+        console.log('  markerBox.object3D.visible       =', markerBox.object3D.visible);
+      }
+
+      // 🔧 Hard-force visibility, just in case AR.js is being weird:
+      marker.setAttribute('visible', 'true');
+      marker.object3D.visible = true;
+      if (markerBox) {
+        markerBox.setAttribute('visible', 'true');
+        markerBox.object3D.visible = true;
+      }
+    });
+
+    marker.addEventListener('markerLost', () => {
+      console.log('❌ markerLost');
+    });
+  });
+</script>
+
   </body>
 </html>
