@@ -41,43 +41,40 @@
       <div>Loading AR scene, please wait...</div>
     </div>
 
-    <a-scene
-      vr-mode-ui="enabled: false"
-      embedded
-      renderer="logarithmicDepthBuffer: true; precision: mediump; antialias: true;"
-      arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled: true;"
-    >
-      <!-- simple ambient light to be 100% sure things aren't black -->
-      <a-entity light="type: ambient; intensity: 1"></a-entity>
+<a-scene
+  vr-mode-ui="enabled: false"
+  embedded
+  renderer="logarithmicDepthBuffer: true; precision: mediump; antialias: true;"
+  arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled: true;"
+>
+  <!-- STATIC TEST BOX: should ALWAYS be visible in front of the camera -->
+  <a-box id="worldBox"
+         position="0 0 -2"
+         depth="0.5" height="0.5" width="0.5"
+         material="color: blue; opacity: 0.9">
+  </a-box>
 
-      <!-- 🌟 YOUR QR NFT MARKER 🌟 -->
-      <!-- NOTE: this assumes:
-           QaRtZ/markers/qr-art-01/qr-art-01.fset
-           QaRtZ/markers/qr-art-01/qr-art-01.fset3
-           QaRtZ/markers/qr-art-01/qr-art-01.iset
-      -->
-      <a-nft
-        type="nft"
-        url="https://tomklootwijk.github.io/QaRtZ/markers/qr-art-01/qr-art-01"
-        smooth="true"
-        smoothCount="10"
-        smoothTolerance="0.01"
-        smoothThreshold="5"
-        emitevents="true"
-      >
-        <!-- BIG, COLORED, HARD-TO-MISS TEST OBJECT -->
-        <a-box
-          position="0 0.5 0"
-          depth="1"
-          height="1"
-          width="1"
-          material="color: red; opacity: 0.9"
-        ></a-box>
-      </a-nft>
+  <!-- your NFT marker -->
+  <a-nft
+    id="qrMarker"
+    type="nft"
+    url="https://tomklootwijk.github.io/QaRtZ/markers/qr-art-01/qr-art-01"
+    smooth="true"
+    smoothCount="10"
+    smoothTolerance="0.01"
+    smoothThreshold="5"
+    emitevents="true"
+  >
+    <a-box id="markerBox"
+           position="0 0.5 0"
+           depth="1" height="1" width="1"
+           material="color: red; opacity: 0.9">
+    </a-box>
+  </a-nft>
 
-      <!-- camera -->
-      <a-entity camera position="0 0 0"></a-entity>
-    </a-scene>
+  <a-entity camera id="mainCamera"></a-entity>
+</a-scene>
+
 
     <script>
       // Remove loader when scene is ready
