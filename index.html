@@ -2,144 +2,70 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>QR NFT AR Test</title>
+    <title>MindAR QR Art</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
 
-    <!-- A-Frame (matching AR.js 3.4.7) -->
-    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+    <!-- MindAR image tracking core -->
+    <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/dist/mindar-image.prod.js"></script>
 
-    <!-- AR.js with NFT (image tracking), fixed version -->
-    <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.7/aframe/build/aframe-ar-nft.js"></script>
+    <!-- A-Frame -->
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+
+    <!-- MindAR A-Frame integration -->
+    <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
     <style>
-      body { margin: 0; overflow: hidden; }
-
-      /* optional loader so you know descriptors are still loading */
-      .arjs-loader {
-        height: 100%;
-        width: 100%;
-        position: absolute;
-        top: 0;
-        left: 0;
-        background-color: rgba(0, 0, 0, 0.8);
-        z-index: 9999;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-      }
-
-      .arjs-loader div {
-        text-align: center;
-        font-size: 1.25em;
-        color: white;
+      body {
+        margin: 0;
+        overflow: hidden;
       }
     </style>
   </head>
-
   <body>
-    <!-- minimal loader shown until NFT descriptors are ready -->
-    <div class="arjs-loader">
-      <div>Loading AR scene, please wait...</div>
-    </div>
+    <!-- Main AR scene -->
+    <a-scene
+      mindar-image="imageTargetSrc: ./targets.mind;"
+      vr-mode-ui="enabled: false"
+      device-orientation-permission-ui="enabled: false"
+      renderer="colorManagement: true; physicallyCorrectLights: true;"
+    >
+      <!-- Load your 3D art -->
+      <a-assets>
+        <!-- Change src if your model path/name is different -->
+        <a-asset-item
+          id="artModel"
+          src="https://tomklootwijk.github.io/QaRtZ/models/artpiece.glb"
+        ></a-asset-item>
+      </a-assets>
 
-<a-scene
-  vr-mode-ui="enabled: false"
-  embedded
-  renderer="logarithmicDepthBuffer: true; precision: mediump; antialias: true;"
-  arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled: true;"
->
-  <!-- STATIC TEST BOX: should ALWAYS be visible in front of the camera -->
-  <a-box id="worldBox"
-         position="0 0 -2"
-         depth="0.5" height="0.5" width="0.5"
-         material="color: blue; opacity: 0.9">
-  </a-box>
+      <!-- Camera (MindAR controls this, so disable look-controls) -->
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-  <!-- your NFT marker -->
-<a-nft
-  id="qrMarker"
-  type="nft"
-  url="https://tomklootwijk.github.io/QaRtZ/markers/pinball/pinball"
-  smooth="true"
-  smoothCount="10"
-  smoothTolerance="0.01"
-  smoothThreshold="5"
-  emitevents="true"
->
-  <a-box
-    id="markerBox"
-    position="0 0 0"
-    scale="100 100 100"
-    depth="1"
-    height="1"
-    width="1"
-    material="color: yellow; opacity: 0.8"
-  ></a-box>
-</a-nft>
+      <!-- This entity is anchored to your image target -->
+      <a-entity mindar-image-target="targetIndex: 0">
+        <!-- TEST OVERLAY: blue plane perfectly over the target image -->
+        <!-- width=1 => same width as target; height = aspect ratio of your image -->
+        <a-plane
+          position="0 0 0"
+          rotation="0 0 0"
+          width="1"
+          height="0.552"
+          color="#4CC3D9"
+          opacity="0.4"
+        ></a-plane>
 
-
-  <a-entity camera id="mainCamera"></a-entity>
-</a-scene>
-
-
-    <script>
-      // Remove loader when scene is ready
-      document.querySelector('a-scene').addEventListener('loaded', () => {
-        const loader = document.querySelector('.arjs-loader');
-        if (loader) loader.style.display = 'none';
-      });
-
-      // Extra debug
-      window.addEventListener('DOMContentLoaded', () => {
-        const marker = document.querySelector('a-nft');
-        if (!marker) return;
-
-        marker.addEventListener('markerFound', () => {
-          console.log('NFT marker FOUND');
-        });
-        marker.addEventListener('markerLost', () => {
-          console.log('NFT marker LOST');
-        });
-      });
-    </script>
-
-<script>
-  window.addEventListener('DOMContentLoaded', () => {
-    const marker = document.querySelector('#qrMarker');
-    const markerBox = document.querySelector('#markerBox');
-
-    if (!marker) {
-      console.warn('qrMarker not found in DOM');
-      return;
-    }
-
-    // Fired when NFT descriptors are fully loaded
-    window.addEventListener('arjs-nft-loaded', () => {
-      console.log('📦 arjs-nft-loaded (descriptors ready)');
-    });
-
-    marker.addEventListener('markerFound', () => {
-      console.log('✅ markerFound');
-      console.log('  marker.getAttribute("visible") =', marker.getAttribute('visible'));
-      console.log('  marker.object3D.visible       =', marker.object3D.visible);
-      if (markerBox) {
-        console.log('  markerBox.getAttribute("visible") =', markerBox.getAttribute('visible'));
-        console.log('  markerBox.object3D.visible       =', markerBox.object3D.visible);
-      }
-
-      // 🔧 Hard-force visibility, just in case AR.js is being weird:
-      marker.setAttribute('visible', 'true');
-      marker.object3D.visible = true;
-      if (markerBox) {
-        markerBox.setAttribute('visible', 'true');
-        markerBox.object3D.visible = true;
-      }
-    });
-
-    marker.addEventListener('markerLost', () => {
-      console.log('❌ markerLost');
-    });
-  });
-</script>
-
+        <!-- YOUR 3D ART -->
+        <!-- Tweak position/scale/rotation until it sits nicely on your target -->
+        <a-entity
+          gltf-model="#artModel"
+          position="0 0 0.1"
+          scale="0.4 0.4 0.4"
+          rotation="0 0 0"
+        ></a-entity>
+      </a-entity>
+    </a-scene>
   </body>
 </html>
