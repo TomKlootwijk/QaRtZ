@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>QR AR Art</title>
+
+    <!-- A-Frame -->
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+
+    <!-- AR.js with Image Tracking (NFT) + Location-based -->
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
+
+    <style>
+      body { margin: 0; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <a-scene
+      embedded
+      vr-mode-ui="enabled: false"
+      renderer="logarithmicDepthBuffer: true; antialias: true;"
+      arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled: false;"
+    >
+      <!-- Assets -->
+      <a-assets>
+        <!-- update this to your model -->
+        <a-asset-item id="artModel" src="models/artpiece.glb"></a-asset-item>
+      </a-assets>
+
+      <!-- Anchor: your QR NFT marker -->
+      <a-nft
+        type="nft"
+        url="markers/qr-art-01/qr-art-01"
+        smooth="true"
+        smoothCount="10"
+        smoothTolerance="0.01"
+        smoothThreshold="5"
+      >
+        <a-entity
+          gltf-model="#artModel"
+          scale="0.5 0.5 0.5"
+          position="0 0 0"
+          rotation="0 0 0"
+        ></a-entity>
+      </a-nft>
+
+      <!-- Camera -->
+      <a-entity camera></a-entity>
+    </a-scene>
+  </body>
+</html>
