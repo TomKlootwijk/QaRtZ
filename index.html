@@ -6,282 +6,79 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <title>QaRtZ AR Deform Test</title>
+    <title>QaRtZ AR Baked Deform Test</title>
 
     <!-- A-Frame -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
     <!-- MindAR A-Frame (image targets) -->
-    <!-- Pin a version if you like; this one is commonly used. -->
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+    <!-- animation-mixer lives in aframe-extras -->
+    <script src="https://cdn.jsdelivr.net/npm/aframe-extras@6.1.1/dist/aframe-extras.min.js"></script>
 
     <style>
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
     </style>
 
     <script>
-      // Deform effects implemented as lightweight vertex shader math (no baked mesh animation).
-      AFRAME.registerComponent("deform-fx", {
+      // Start animation only when marker is found.
+      AFRAME.registerComponent("marker-playback", {
         schema: {
-          // animated
-          twirlFactor: { type: "number", default: 0 },   // 0..5
-          meltFactor: { type: "number", default: 0 },    // 0..1
-          squashFactor: { type: "number", default: 0 },  // 0..1
-
-          // Twirl params (from your screenshot)
-          twirlAngleDeg: { type: "number", default: 100 },
-          twirlInner: { type: "number", default: 0 },
-          twirlOuter: { type: "number", default: 1 },
-          twirlSmooth: { type: "boolean", default: true },
-
-          // Melt params (from your screenshot)
-          meltFalloff: { type: "number", default: 3.75 },
-          meltRadius: { type: "number", default: 2.44 },
-          meltClampBottom: { type: "boolean", default: true },
-          meltTop: { type: "number", default: 2.5 },
-          meltBottom: { type: "number", default: -0.25 },
-
-          // Squash & Stretch params (from your screenshot)
-          squashCurvature: { type: "number", default: 10 },
-          squashTop: { type: "number", default: 2.0 },
-          squashBottom: { type: "number", default: -0.5 },
-
-          // Optional: pick a different object as "axis transform" (defaults to this entity)
-          // e.g. axisObject: "#someChild"
-          axisObject: { type: "selector" }
+          // Use "*" to play the first/only clip in the GLB, or set a specific clip name.
+          clip: { type: "string", default: "*" },
+          loop: { type: "string", default: "repeat" }, // repeat | once
+          timeScale: { type: "number", default: 1 }
         },
 
         init() {
-          this._items = []; // { mesh, shader }
-          this.el.addEventListener("model-loaded", () => this._setup());
-        },
+          this._modelReady = false;
+          this._targetVisible = false;
 
-        _setup() {
-          const root = this.el.getObject3D("mesh");
-          if (!root) return;
+          this._onTargetFound = () => {
+            this._targetVisible = true;
+            this._applyPlayback();
+          };
+          this._onTargetLost = () => {
+            this._targetVisible = false;
+            // Pause when marker lost (keeps pose)
+            const mixer = this.el.components["animation-mixer"];
+            if (mixer) mixer.mixer.timeScale = 0;
+          };
 
-          root.traverse((obj) => {
-            if (!obj.isMesh || !obj.material || !obj.geometry) return;
+          // These events are on the mindar-image-target entity.
+          const targetEl = this.el;
+          targetEl.addEventListener("targetFound", this._onTargetFound);
+          targetEl.addEventListener("targetLost", this._onTargetLost);
 
-            // Clone the material so onBeforeCompile doesn't affect other instances.
-            obj.material = obj.material.clone();
+          // Wait for model to load then attach animation-mixer.
+          targetEl.addEventListener("model-loaded", () => {
+            this._modelReady = true;
 
-            obj.material.onBeforeCompile = (shader) => {
-              // Animated uniforms
-              shader.uniforms.uTwirlFactor = { value: 0 };
-              shader.uniforms.uMeltFactor = { value: 0 };
-              shader.uniforms.uSquashFactor = { value: 0 };
+            // Ensure animation-mixer is present
+            targetEl.setAttribute(
+              "animation-mixer",
+              `clip: ${this.data.clip}; loop: ${this.data.loop}; timeScale: 0`
+            );
 
-              // Twirl uniforms
-              shader.uniforms.uTwirlAngleDeg = { value: this.data.twirlAngleDeg };
-              shader.uniforms.uTwirlInner = { value: this.data.twirlInner };
-              shader.uniforms.uTwirlOuter = { value: this.data.twirlOuter };
-              shader.uniforms.uTwirlSmooth = { value: this.data.twirlSmooth ? 1.0 : 0.0 };
-
-              // Bounds for "Limited" normalization (computed per-mesh)
-              shader.uniforms.uTwirlMinY = { value: -1.0 };
-              shader.uniforms.uTwirlMaxY = { value: 1.0 };
-
-              // Melt uniforms
-              shader.uniforms.uMeltFalloff = { value: this.data.meltFalloff };
-              shader.uniforms.uMeltRadius = { value: this.data.meltRadius };
-              shader.uniforms.uMeltClamp = { value: this.data.meltClampBottom ? 1.0 : 0.0 };
-              shader.uniforms.uMeltTop = { value: this.data.meltTop };
-              shader.uniforms.uMeltBottom = { value: this.data.meltBottom };
-
-              // Squash uniforms
-              shader.uniforms.uSquashCurv = { value: this.data.squashCurvature };
-              shader.uniforms.uSquashTop = { value: this.data.squashTop };
-              shader.uniforms.uSquashBottom = { value: this.data.squashBottom };
-
-              // Axis basis vectors in *mesh local space*
-              shader.uniforms.uAxisT = { value: new THREE.Vector3(1, 0, 0) };
-              shader.uniforms.uAxisY = { value: new THREE.Vector3(0, 1, 0) };
-              shader.uniforms.uAxisB = { value: new THREE.Vector3(0, 0, 1) };
-
-              shader.vertexShader =
-                `
-                uniform float uTwirlFactor, uMeltFactor, uSquashFactor;
-                uniform float uTwirlAngleDeg, uTwirlInner, uTwirlOuter, uTwirlSmooth;
-                uniform float uTwirlMinY, uTwirlMaxY;
-
-                uniform float uMeltFalloff, uMeltRadius, uMeltClamp, uMeltTop, uMeltBottom;
-                uniform float uSquashCurv, uSquashTop, uSquashBottom;
-
-                uniform vec3  uAxisT, uAxisY, uAxisB;
-
-                float invLerp(float a, float b, float v) {
-                  return (v - a) / max(b - a, 1e-6);
-                }
-
-                vec3 toAxisSpace(vec3 p){
-                  return vec3(dot(p, uAxisT), dot(p, uAxisY), dot(p, uAxisB));
-                }
-                vec3 fromAxisSpace(vec3 q){
-                  return uAxisT*q.x + uAxisY*q.y + uAxisB*q.z;
-                }
-                ` + shader.vertexShader;
-
-              shader.vertexShader = shader.vertexShader.replace(
-                "#include <begin_vertex>",
-                `
-                #include <begin_vertex>
-
-                // Convert to "axis space": q.y is "along axis"
-                vec3 q = toAxisSpace(transformed);
-
-                // ----------------------
-                // TWIRL (Limited mode)
-                // ----------------------
-                float tTw = clamp(invLerp(uTwirlMinY, uTwirlMaxY, q.y), 0.0, 1.0);
-
-                float wTw = (uTwirlSmooth > 0.5)
-                  ? smoothstep(uTwirlInner, uTwirlOuter, tTw)
-                  : (step(uTwirlInner, tTw) * (1.0 - step(uTwirlOuter, tTw)));
-
-                float theta = radians(uTwirlAngleDeg) * uTwirlFactor * wTw;
-                float c = cos(theta);
-                float s = sin(theta);
-                vec2 xz = vec2(q.x, q.z);
-                xz = mat2(c, -s, s, c) * xz;
-                q.x = xz.x;
-                q.z = xz.y;
-
-                // ----------------------
-                // MELT
-                // ----------------------
-                // 0 at top -> 1 at bottom
-                float vy = clamp(invLerp(uMeltTop, uMeltBottom, q.y), 0.0, 1.0);
-
-                float r = length(vec2(q.x, q.z));
-                float vr = pow(clamp(1.0 - r / max(uMeltRadius, 1e-6), 0.0, 1.0), uMeltFalloff);
-
-                float m = uMeltFactor * vy * vr;
-
-                // Pull down and bulge a bit
-                q.y -= m * (uMeltTop - uMeltBottom) * 0.35;
-                q.xz *= (1.0 + m * 0.15);
-
-                if (uMeltClamp > 0.5) {
-                  q.y = max(q.y, uMeltBottom);
-                }
-
-                // ----------------------
-                // SQUASH & STRETCH
-                // ----------------------
-                float tSq = clamp(invLerp(uSquashBottom, uSquashTop, q.y), 0.0, 1.0);
-                float bell = pow(sin(3.14159265 * tSq), uSquashCurv);
-                float sAmt = uSquashFactor * bell;
-
-                float yScale  = mix(1.0, 0.5, sAmt);
-                float xzScale = mix(1.0, 1.25, sAmt);
-
-                q.y *= yScale;
-                q.xz *= xzScale;
-
-                // Back to mesh local space
-                transformed = fromAxisSpace(q);
-                `
-              );
-
-              obj.userData._deformShader = shader;
-              this._items.push({ mesh: obj, shader });
-            };
-
-            obj.material.needsUpdate = true;
+            // If already visible, start immediately
+            this._applyPlayback();
           });
-
-          // Compute basis + bounds once (relative alignment stays constant even as the marker moves).
-          this._updateAxisBasisAndBoundsOnce();
         },
 
-        _updateAxisBasisAndBoundsOnce() {
-          const axisObj =
-            (this.data.axisObject && this.data.axisObject.object3D)
-              ? this.data.axisObject.object3D
-              : this.el.object3D;
+        _applyPlayback() {
+          if (!this._modelReady) return;
+          const mixer = this.el.components["animation-mixer"];
+          if (!mixer) return;
 
-          axisObj.updateWorldMatrix(true, false);
+          if (this._targetVisible) {
+            mixer.mixer.timeScale = this.data.timeScale;
 
-          const qAxis = axisObj.getWorldQuaternion(new THREE.Quaternion());
-
-          const worldX = new THREE.Vector3(1, 0, 0).applyQuaternion(qAxis).normalize();
-          const worldY = new THREE.Vector3(0, 1, 0).applyQuaternion(qAxis).normalize();
-          const worldZ = new THREE.Vector3(0, 0, 1).applyQuaternion(qAxis).normalize();
-
-          for (const it of this._items) {
-            const mesh = it.mesh;
-            const sh = it.shader;
-            if (!mesh || !sh) continue;
-
-            mesh.updateWorldMatrix(true, false);
-
-            // Convert world directions into mesh local directions.
-            const invWorld = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
-            const invM3 = new THREE.Matrix3().setFromMatrix4(invWorld);
-
-            const lx = worldX.clone().applyMatrix3(invM3).normalize();
-            const ly = worldY.clone().applyMatrix3(invM3).normalize();
-            const lz = worldZ.clone().applyMatrix3(invM3).normalize();
-
-            sh.uniforms.uAxisT.value.copy(lx);
-            sh.uniforms.uAxisY.value.copy(ly);
-            sh.uniforms.uAxisB.value.copy(lz);
-
-            // Compute twirl bounds along the axis direction (in mesh local space).
-            const geom = mesh.geometry;
-            const pos = geom.attributes.position;
-            if (!pos) continue;
-
-            let minY = Infinity;
-            let maxY = -Infinity;
-
-            const v = new THREE.Vector3();
-            for (let i = 0; i < pos.count; i++) {
-              v.fromBufferAttribute(pos, i);
-              const y = v.dot(ly); // axis-space y is dot(pos, axisY)
-              if (y < minY) minY = y;
-              if (y > maxY) maxY = y;
-            }
-
-            if (isFinite(minY) && isFinite(maxY) && maxY > minY) {
-              sh.uniforms.uTwirlMinY.value = minY;
-              sh.uniforms.uTwirlMaxY.value = maxY;
-            }
-          }
-        },
-
-        update() {
-          // Push non-animated params when changed
-          for (const it of this._items) {
-            const sh = it.shader;
-            if (!sh) continue;
-
-            sh.uniforms.uTwirlAngleDeg.value = this.data.twirlAngleDeg;
-            sh.uniforms.uTwirlInner.value = this.data.twirlInner;
-            sh.uniforms.uTwirlOuter.value = this.data.twirlOuter;
-            sh.uniforms.uTwirlSmooth.value = this.data.twirlSmooth ? 1.0 : 0.0;
-
-            sh.uniforms.uMeltFalloff.value = this.data.meltFalloff;
-            sh.uniforms.uMeltRadius.value = this.data.meltRadius;
-            sh.uniforms.uMeltClamp.value = this.data.meltClampBottom ? 1.0 : 0.0;
-            sh.uniforms.uMeltTop.value = this.data.meltTop;
-            sh.uniforms.uMeltBottom.value = this.data.meltBottom;
-
-            sh.uniforms.uSquashCurv.value = this.data.squashCurvature;
-            sh.uniforms.uSquashTop.value = this.data.squashTop;
-            sh.uniforms.uSquashBottom.value = this.data.squashBottom;
-          }
-        },
-
-        tick() {
-          // Animated params every frame
-          for (const it of this._items) {
-            const sh = it.shader;
-            if (!sh) continue;
-            sh.uniforms.uTwirlFactor.value = this.data.twirlFactor;
-            sh.uniforms.uMeltFactor.value = this.data.meltFactor;
-            sh.uniforms.uSquashFactor.value = this.data.squashFactor;
+            // Restart from beginning each time we find the marker:
+            // easiest reliable method is to reset the mixer time.
+            mixer.mixer.setTime(0);
+          } else {
+            mixer.mixer.timeScale = 0;
           }
         }
       });
@@ -296,10 +93,11 @@
       renderer="colorManagement: true; physicallyCorrectLights: true;"
     >
       <a-assets>
-        <!-- No local model asset needed since we load it from your GitHub Pages URL -->
+        <!-- Preload baked model -->
+        <a-asset-item id="bakedModel" src="https://tomklootwijk.github.io/QaRtZ/models/Artpiece_BakedExport.glb"></a-asset-item>
       </a-assets>
 
-      <!-- Optional light -->
+      <!-- Lights -->
       <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
       <a-entity light="type: ambient; intensity: 0.6"></a-entity>
 
@@ -310,20 +108,11 @@
       <a-entity mindar-image-target="targetIndex: 0">
         <a-entity
           id="artpiece"
-          gltf-model="url(https://tomklootwijk.github.io/QaRtZ/models/artpiece.glb)"
+          gltf-model="#bakedModel"
           position="0 0 0"
           rotation="90 0 0"
           scale="1 1 1"
-
-          deform-fx="
-            twirlAngleDeg: 100; twirlInner: 0; twirlOuter: 1; twirlSmooth: true;
-            meltTop: 2.5; meltBottom: -0.25; meltRadius: 2.44; meltFalloff: 3.75; meltClampBottom: true;
-            squashTop: 2; squashBottom: -0.5; squashCurvature: 10;
-          "
-
-          animation__twirl="property: deform-fx.twirlFactor; from: 0; to: -10; dir: alternate; dur: 1600; loop: true; easing: easeInOutSine"
-          animation__melt="property: deform-fx.meltFactor; from: 0; to: -2; dir: alternate; dur: 2200; loop: true; easing: easeInOutSine"
-          animation__squash="property: deform-fx.squashFactor; from: 0; to: -2; dir: alternate; dur: 900; loop: true; easing: easeInOutSine"
+          marker-playback="clip: *; loop: repeat; timeScale: 1"
         ></a-entity>
       </a-entity>
     </a-scene>
