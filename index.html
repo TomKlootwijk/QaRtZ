@@ -5,81 +5,110 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>QaRtZ AR Baked Deform Test</title>
 
+    <!-- A-Frame -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
-    <!-- animation-mixer -->
-    <script src="https://cdn.jsdelivr.net/npm/aframe-extras@6.1.1/dist/aframe-extras.min.js"></script>
+    <!-- MindAR A-Frame (image targets) -->
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
     <style>
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
     </style>
 
     <script>
-      AFRAME.registerComponent("baked-clip-on-target", {
+      // Plays a named glTF clip using THREE.AnimationMixer (no aframe-extras dependency).
+      // Attach this to the entity with gltf-model.
+      AFRAME.registerComponent("gltf-clip-player", {
         schema: {
-          clip: { type: "string", default: "" },      // try this name first
-          loop: { type: "string", default: "repeat" },// repeat | once
+          clip: { type: "string", default: "" },         // exact clip name, or "" for first
+          loop: { type: "string", default: "repeat" },   // repeat | once
+          timeScale: { type: "number", default: 1 },
           restartOnFound: { type: "boolean", default: true },
           pauseOnLost: { type: "boolean", default: true },
-          debugClips: { type: "boolean", default: true }
+          debug: { type: "boolean", default: true }
         },
 
         init() {
-          this._targetEl = null;
-          this._isVisible = true; // if we can't find target, autoplay
-          this._chosenClip = null;
+          this.mixer = null;
+          this.action = null;
+          this._playing = false;
+          this._model = null;
 
-          // Find parent mindar-image-target (after scene init, components exist)
-          this.el.sceneEl.addEventListener("loaded", () => {
-            this._targetEl = this._findMindarTarget(this.el);
-            if (this._targetEl) {
-              this._isVisible = false;
+          this._targetEl = this._findMindarTarget(this.el);
 
-              this._targetEl.addEventListener("targetFound", () => {
-                this._isVisible = true;
-                this._applyPlayback(true);
-              });
-
-              this._targetEl.addEventListener("targetLost", () => {
-                this._isVisible = false;
-                this._applyPlayback(false);
-              });
-            }
-          });
-
-          this.el.addEventListener("model-loaded", (e) => {
-            const model = this.el.getObject3D("mesh");
-            const clips = (model && model.animations) ? model.animations : [];
-
-            if (this.data.debugClips) {
-              console.log("[baked-clip-on-target] three.js clips:", clips.map(c => c.name));
-            }
-
-            // Choose clip: prefer provided name if it exists, else first clip.
-            let chosen = null;
-            if (this.data.clip && this.data.clip.trim().length) {
-              const wanted = this.data.clip.trim();
-              chosen = clips.find(c => c.name === wanted) || null;
-              if (!chosen && this.data.debugClips) {
-                console.warn("[baked-clip-on-target] Requested clip not found:", wanted);
-              }
-            }
-            if (!chosen && clips.length) chosen = clips[0];
-            this._chosenClip = chosen ? chosen.name : "*";
-
-            // Install animation-mixer (start paused if we have a target, else autoplay)
-            const initialTimeScale = this._targetEl ? 0 : 1;
-
-            this.el.setAttribute("animation-mixer", {
-              clip: this._chosenClip,
-              loop: this.data.loop,
-              timeScale: initialTimeScale
+          if (this._targetEl) {
+            this._targetEl.addEventListener("targetFound", () => {
+              this._playing = true;
+              if (this.data.restartOnFound) this._restart();
             });
 
-            // If autoplay mode (no marker target found), kick it off
-            if (!this._targetEl) this._applyPlayback(true);
+            this._targetEl.addEventListener("targetLost", () => {
+              if (this.data.pauseOnLost) this._playing = false;
+            });
+
+            // start paused until found
+            this._playing = false;
+          } else {
+            // no marker parent -> autoplay
+            this._playing = true;
+          }
+
+          this.el.addEventListener("model-loaded", () => {
+            this._model = this.el.getObject3D("mesh");
+            if (!this._model) return;
+
+            const clips = this._model.animations || [];
+            if (this.data.debug) {
+              console.log("[gltf-clip-player] clips:", clips.map(c => c.name));
+              if (clips[0]) {
+                console.log("[gltf-clip-player] first clip track examples:",
+                  clips[0].tracks.slice(0, 10).map(t => t.name)
+                );
+              }
+            }
+
+            let clip = null;
+            const want = (this.data.clip || "").trim();
+            if (want.length) clip = clips.find(c => c.name === want) || null;
+            if (!clip && clips.length) clip = clips[0];
+
+            if (!clip) {
+              console.warn("[gltf-clip-player] No animation clips found in model.");
+              return;
+            }
+
+            this.mixer = new THREE.AnimationMixer(this._model);
+            this.action = this.mixer.clipAction(clip);
+
+            if (this.data.loop === "once") {
+              this.action.setLoop(THREE.LoopOnce, 1);
+              this.action.clampWhenFinished = true;
+            } else {
+              this.action.setLoop(THREE.LoopRepeat, Infinity);
+            }
+
+            this.action.play();
+
+            // If we’re starting paused (waiting for marker), freeze at time 0.
+            if (!this._playing) {
+              this.mixer.setTime(0);
+            }
           });
+        },
+
+        tick(time, timeDelta) {
+          if (!this.mixer || !this.action) return;
+          if (!this._playing) return;
+
+          const dt = (timeDelta / 1000) * (this.data.timeScale || 1);
+          if (dt > 0) this.mixer.update(dt);
+        },
+
+        _restart() {
+          if (!this.mixer || !this.action) return;
+          this.mixer.setTime(0);
+          this.action.reset();
+          this.action.play();
         },
 
         _findMindarTarget(el) {
@@ -89,24 +118,6 @@
             cur = cur.parentEl;
           }
           return null;
-        },
-
-        _applyPlayback(foundNow) {
-          // IMPORTANT: change the COMPONENT property, not mixer.mixer.timeScale
-          if (!this.el.components["animation-mixer"]) return;
-
-          if (this._isVisible) {
-            if (this.data.restartOnFound && foundNow) {
-              // Restart: easiest reliable approach is to briefly set timeScale 0 then 1 and reset time
-              const mixerComp = this.el.components["animation-mixer"];
-              if (mixerComp && mixerComp.mixer) mixerComp.mixer.setTime(0);
-            }
-            this.el.setAttribute("animation-mixer", "timeScale", 1);
-          } else {
-            if (this.data.pauseOnLost) {
-              this.el.setAttribute("animation-mixer", "timeScale", 0);
-            }
-          }
         }
       });
     </script>
@@ -135,12 +146,13 @@
           position="0 0 0"
           rotation="0 0 0"
           scale="1 1 1"
-          baked-clip-on-target="
+          gltf-clip-player="
             clip: default_20251215_143515_MorphSeq_Clip;
             loop: repeat;
+            timeScale: 1;
             restartOnFound: true;
             pauseOnLost: true;
-            debugClips: true;
+            debug: true;
           "
         ></a-entity>
       </a-entity>
