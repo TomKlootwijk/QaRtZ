@@ -2,19 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>QaRtZ AR Baked Deform Test</title>
 
-    <!-- A-Frame -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-
-    <!-- MindAR A-Frame (image targets) -->
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
-
-    <!-- animation-mixer lives in aframe-extras -->
     <script src="https://cdn.jsdelivr.net/npm/aframe-extras@6.1.1/dist/aframe-extras.min.js"></script>
 
     <style>
@@ -22,63 +14,80 @@
     </style>
 
     <script>
-      // Start animation only when marker is found.
-      AFRAME.registerComponent("marker-playback", {
+      // Attach to the *model entity*.
+      // It finds the nearest parent mindar-image-target and uses its targetFound/targetLost events.
+      AFRAME.registerComponent("play-baked-clip-on-target", {
         schema: {
-          // Use "*" to play the first/only clip in the GLB, or set a specific clip name.
-          clip: { type: "string", default: "*" },
+          clip: { type: "string", default: "" },
           loop: { type: "string", default: "repeat" }, // repeat | once
-          timeScale: { type: "number", default: 1 }
+          timeScale: { type: "number", default: 1 },
+          restartOnFound: { type: "boolean", default: true },
+          pauseOnLost: { type: "boolean", default: true }
         },
 
         init() {
           this._modelReady = false;
-          this._targetVisible = false;
+          this._visible = false;
 
-          this._onTargetFound = () => {
-            this._targetVisible = true;
-            this._applyPlayback();
-          };
-          this._onTargetLost = () => {
-            this._targetVisible = false;
-            // Pause when marker lost (keeps pose)
-            const mixer = this.el.components["animation-mixer"];
-            if (mixer) mixer.mixer.timeScale = 0;
-          };
+          this._targetEl = this._findMindarTarget(this.el);
+          if (!this._targetEl) {
+            console.warn("[play-baked-clip-on-target] No parent mindar-image-target found. Animation will autoplay.");
+          } else {
+            this._targetEl.addEventListener("targetFound", () => {
+              this._visible = true;
+              this._apply();
+            });
+            this._targetEl.addEventListener("targetLost", () => {
+              this._visible = false;
+              this._apply();
+            });
+          }
 
-          // These events are on the mindar-image-target entity.
-          const targetEl = this.el;
-          targetEl.addEventListener("targetFound", this._onTargetFound);
-          targetEl.addEventListener("targetLost", this._onTargetLost);
-
-          // Wait for model to load then attach animation-mixer.
-          targetEl.addEventListener("model-loaded", () => {
+          this.el.addEventListener("model-loaded", () => {
             this._modelReady = true;
 
-            // Ensure animation-mixer is present
-            targetEl.setAttribute(
+            // Install animation-mixer with the specific clip name
+            // Start paused (timeScale: 0) until targetFound
+            const clip = this.data.clip && this.data.clip.trim().length ? this.data.clip.trim() : "*";
+            this.el.setAttribute(
               "animation-mixer",
-              `clip: ${this.data.clip}; loop: ${this.data.loop}; timeScale: 0`
+              `clip: ${clip}; loop: ${this.data.loop}; timeScale: 0`
             );
 
-            // If already visible, start immediately
-            this._applyPlayback();
+            // If we have no target element, autoplay
+            if (!this._targetEl) {
+              this._visible = true;
+            }
+
+            this._apply();
           });
         },
 
-        _applyPlayback() {
+        _findMindarTarget(el) {
+          let cur = el.parentEl;
+          while (cur) {
+            if (cur.components && cur.components["mindar-image-target"]) return cur;
+            cur = cur.parentEl;
+          }
+          return null;
+        },
+
+        _apply() {
           if (!this._modelReady) return;
-          const mixer = this.el.components["animation-mixer"];
-          if (!mixer) return;
 
-          if (this._targetVisible) {
-            mixer.mixer.timeScale = this.data.timeScale;
+          const mixerComp = this.el.components["animation-mixer"];
+          if (!mixerComp || !mixerComp.mixer) return;
 
-            // Restart from beginning each time we find the marker:
-            // easiest reliable method is to reset the mixer time.
-            mixer.mixer.setTime(0);
+          if (this._visible) {
+            // Restart when found (optional)
+            if (this.data.restartOnFound) {
+              mixerComp.mixer.setTime(0);
+            }
+            mixerComp.mixer.timeScale = this.data.timeScale;
           } else {
-            mixer.mixer.timeScale = 0;
+            if (this.data.pauseOnLost) {
+              mixerComp.mixer.timeScale = 0;
+            }
           }
         }
       });
@@ -93,26 +102,28 @@
       renderer="colorManagement: true; physicallyCorrectLights: true;"
     >
       <a-assets>
-        <!-- Preload baked model -->
-        <a-asset-item id="bakedModel" src="https://tomklootwijk.github.io/QaRtZ/models/Artpiece_BakedExport.glb"></a-asset-item>
+        <a-asset-item id="bakedModel" src="./models/Artpiece_BakedExport.glb"></a-asset-item>
       </a-assets>
 
-      <!-- Lights -->
       <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
       <a-entity light="type: ambient; intensity: 0.6"></a-entity>
 
-      <!-- Camera for MindAR -->
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-      <!-- Marker target -->
       <a-entity mindar-image-target="targetIndex: 0">
         <a-entity
           id="artpiece"
           gltf-model="#bakedModel"
           position="0 0 0"
-          rotation="90 0 0"
+          rotation="0 0 0"
           scale="1 1 1"
-          marker-playback="clip: *; loop: repeat; timeScale: 1"
+          play-baked-clip-on-target="
+            clip: default_20251215_143515_MorphSeq_Clip;
+            loop: repeat;
+            timeScale: 1;
+            restartOnFound: true;
+            pauseOnLost: true;
+          "
         ></a-entity>
       </a-entity>
     </a-scene>
