@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>MindAR Image AR – Art Piece</title>
+    <title>MindAR Image AR – Metronome Hypnosis</title>
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, user-scalable=no"
@@ -14,6 +14,9 @@
     <!-- MindAR A-Frame build (image tracking) -->
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
+    <!-- A-Frame extras (for animation-mixer on glTF) -->
+    <script src="https://cdn.jsdelivr.net/npm/aframe-extras@6.1.1/dist/aframe-extras.min.js"></script>
+
     <style>
       body {
         margin: 0;
@@ -24,6 +27,13 @@
     </style>
   </head>
   <body>
+    <!-- Optional: hidden audio element we control via JS -->
+    <audio
+      id="metronomeAudio"
+      src="https://tomklootwijk.github.io/QaRtZ/audio/MetronomeHypnosis.mp3"
+      preload="auto"
+    ></audio>
+
     <!-- Main AR scene -->
     <a-scene
       mindar-image="imageTargetSrc: ./targets.mind;"
@@ -32,27 +42,83 @@
       vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: false"
     >
-      <!-- Assets: your 3D art -->
+      <!-- Assets: your animated 3D metronome -->
       <a-assets>
         <a-asset-item
-          id="artModel"
-          src="https://tomklootwijk.github.io/QaRtZ/models/artpiece.glb"
+          id="metronomeModel"
+          src="https://tomklootwijk.github.io/QaRtZ/models/metronome_anim.glb"
         ></a-asset-item>
       </a-assets>
 
       <!-- Camera (MindAR controls it) -->
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-      <!-- This entity is locked to your image target (first target in targets.mind) -->
+      <!-- Entity locked to your image target -->
       <a-entity mindar-image-target="targetIndex: 0" id="targetRoot">
+        <!-- Animated metronome model -->
         <a-entity
-          id="artEntity"
-          gltf-model="#artModel"
+          id="metronome"
+          gltf-model="#metronomeModel"
           position="0 0 0.2"
-          scale="2 2 2"
-          rotation="90 0 0"
+          scale="1 1 1"
+          rotation="270 0 0"
+          animation-mixer="clip: *; loop: repeat; timeScale: 1;"
         ></a-entity>
       </a-entity>
     </a-scene>
+
+    <script>
+      const audioEl = document.getElementById("metronomeAudio");
+      const targetRoot = document.getElementById("targetRoot");
+
+      // Loop the audio
+      if (audioEl) {
+        audioEl.loop = true;
+      }
+
+      // Mobile browsers usually require a user interaction before playing audio.
+      let audioUnlocked = false;
+
+      const unlockAudio = () => {
+        if (!audioEl || audioUnlocked) return;
+        audioEl
+          .play()
+          .then(() => {
+            audioEl.pause();
+            audioEl.currentTime = 0;
+            audioUnlocked = true;
+            console.log("Audio unlocked and ready.");
+          })
+          .catch((e) => {
+            console.warn("Audio unlock failed:", e);
+          });
+      };
+
+      // First tap anywhere unlocks audio
+      window.addEventListener("click", unlockAudio, { once: true });
+      window.addEventListener("touchstart", unlockAudio, { once: true });
+
+      if (targetRoot && audioEl) {
+        // When the marker is found: restart + play audio
+        targetRoot.addEventListener("targetFound", () => {
+          if (!audioUnlocked) return; // wait for user gesture
+          audioEl.currentTime = 0;
+          audioEl
+            .play()
+            .then(() => {
+              console.log("Metronome hypnosis audio playing");
+            })
+            .catch((e) => {
+              console.warn("Error playing audio:", e);
+            });
+        });
+
+        // When the marker is lost: pause audio (so it resumes from start next time)
+        targetRoot.addEventListener("targetLost", () => {
+          audioEl.pause();
+          // don't reset currentTime here; we reset on targetFound
+        });
+      }
+    </script>
   </body>
 </html>
