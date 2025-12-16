@@ -17,7 +17,6 @@
 
     <script>
       // Plays a named glTF clip using THREE.AnimationMixer (no aframe-extras dependency).
-      // Attach this to the entity with gltf-model.
       AFRAME.registerComponent("gltf-clip-player", {
         schema: {
           clip: { type: "string", default: "" },         // exact clip name, or "" for first
@@ -60,11 +59,6 @@
             const clips = this._model.animations || [];
             if (this.data.debug) {
               console.log("[gltf-clip-player] clips:", clips.map(c => c.name));
-              if (clips[0]) {
-                console.log("[gltf-clip-player] first clip track examples:",
-                  clips[0].tracks.slice(0, 10).map(t => t.name)
-                );
-              }
             }
 
             let clip = null;
@@ -75,6 +69,11 @@
             if (!clip) {
               console.warn("[gltf-clip-player] No animation clips found in model.");
               return;
+            }
+
+            if (want.length && !clips.find(c => c.name === want)) {
+              console.warn("[gltf-clip-player] Requested clip not found:", want);
+              console.warn("[gltf-clip-player] Available:", clips.map(c => c.name));
             }
 
             this.mixer = new THREE.AnimationMixer(this._model);
@@ -130,8 +129,13 @@
       device-orientation-permission-ui="enabled: true"
       renderer="colorManagement: true; physicallyCorrectLights: true;"
     >
-      <a-assets>
-        <a-asset-item id="bakedModel" src="./models/Artpiece_BakedExport.glb"></a-asset-item>
+      <a-assets timeout="300000">
+        <!-- Put Monet_BakedExport.glb in ./models/ on your GitHub Pages site -->
+        <a-asset-item
+          id="bakedModel"
+          src="./models/Monet_BakedExport.glb"
+          crossorigin="anonymous"
+        ></a-asset-item>
       </a-assets>
 
       <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
@@ -145,9 +149,9 @@
           gltf-model="#bakedModel"
           position="0 0 0"
           rotation="0 0 0"
-          scale="1 1 1"
+          scale="2 2 2"
           gltf-clip-player="
-            clip: default_20251215_143515_MorphSeq_Clip;
+            clip: Cube(Clone)_20251216_122932_MorphSeq_Clip;
             loop: repeat;
             timeScale: 1;
             restartOnFound: true;
