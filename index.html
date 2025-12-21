@@ -30,10 +30,13 @@
         // Hex: 425695 => rgb(66, 86, 149)
         // Thin rim fade: solid almost to edge, fade only near outer boundary
         const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-        grad.addColorStop(0.00, "rgba(66, 86, 149, 1)");
-        grad.addColorStop(0.96, "rgba(66, 86, 149, 1)");
-        grad.addColorStop(0.995, "rgba(66, 86, 149, 0.25)");
-        grad.addColorStop(1.00, "rgba(66, 86, 149, 0)");
+	// Solid color until near the edge
+	grad.addColorStop(0.00, "rgba(66, 86, 149, 1)");
+	grad.addColorStop(0.90, "rgba(66, 86, 149, 1)"); // <-- keep solid to 90%
+
+	// Thin fade band to transparent
+	grad.addColorStop(0.98, "rgba(66, 86, 149, 0.35)");
+	grad.addColorStop(1.00, "rgba(66, 86, 149, 0)");
 
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
