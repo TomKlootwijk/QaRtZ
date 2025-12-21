@@ -32,10 +32,10 @@
         const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
 	// Solid color until near the edge
 	grad.addColorStop(0.00, "rgba(66, 86, 149, 1)");
-	grad.addColorStop(0.90, "rgba(66, 86, 149, 1)"); // <-- keep solid to 90%
+	grad.addColorStop(0.7, "rgba(66, 86, 149, 1)"); // <-- keep solid to 90%
 
 	// Thin fade band to transparent
-	grad.addColorStop(0.98, "rgba(66, 86, 149, 0.35)");
+	grad.addColorStop(0.8, "rgba(66, 86, 149, 0.35)");
 	grad.addColorStop(1.00, "rgba(66, 86, 149, 0)");
 
         ctx.fillStyle = grad;
