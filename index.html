@@ -16,7 +16,7 @@
     </style>
 
     <script>
-      // Build a radial fade texture in #425695 -> transparent, drawn once.
+      // --- 3D fading circle texture (thin rim fade) ---
       function buildFadeCircleTexture() {
         const c = document.getElementById("fadeCircleTex");
         if (!c) return;
@@ -27,28 +27,28 @@
 
         ctx.clearRect(0, 0, w, h);
 
-        // Thin rim fade: solid almost to edge, then fade out quickly.
+        // Hex: 425695 => rgb(66, 86, 149)
+        // Thin rim fade: solid almost to edge, fade only near outer boundary
         const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
         grad.addColorStop(0.00, "rgba(66, 86, 149, 1)");
-        grad.addColorStop(0.95, "rgba(66, 86, 149, 1)");
-        grad.addColorStop(0.99, "rgba(66, 86, 149, 0.25)");
+        grad.addColorStop(0.96, "rgba(66, 86, 149, 1)");
+        grad.addColorStop(0.995, "rgba(66, 86, 149, 0.25)");
         grad.addColorStop(1.00, "rgba(66, 86, 149, 0)");
 
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
       }
-
       document.addEventListener("DOMContentLoaded", buildFadeCircleTexture);
 
-      // Plays a named glTF clip using THREE.AnimationMixer (no aframe-extras dependency).
+      // --- Animation clip player ---
       AFRAME.registerComponent("gltf-clip-player", {
         schema: {
           clip: { type: "string", default: "" },
-          loop: { type: "string", default: "repeat" },
+          loop: { type: "string", default: "repeat" },   // repeat | once
           timeScale: { type: "number", default: 1 },
           restartOnFound: { type: "boolean", default: true },
           pauseOnLost: { type: "boolean", default: true },
-          debug: { type: "boolean", default: false }
+          debug: { type: "boolean", default: true }
         },
 
         init() {
@@ -64,11 +64,9 @@
               this._playing = true;
               if (this.data.restartOnFound) this._restart();
             });
-
             this._targetEl.addEventListener("targetLost", () => {
               if (this.data.pauseOnLost) this._playing = false;
             });
-
             this._playing = false;
           } else {
             this._playing = true;
@@ -102,7 +100,6 @@
             }
 
             this.action.play();
-
             if (!this._playing) this.mixer.setTime(0);
           });
         },
@@ -131,19 +128,22 @@
         }
       });
 
-      // Force bright color + optional outline on all meshes in a glTF.
+      // --- Bright white + outline (safe: no recursive outlining) ---
       AFRAME.registerComponent("gltf-style", {
         schema: {
           color: { type: "color", default: "#FFFFFF" },
           emissive: { type: "color", default: "#FFFFFF" },
-          emissiveIntensity: { type: "number", default: 0.35 }, // brighten without blowing out
-          roughness: { type: "number", default: 0.5 },
+          emissiveIntensity: { type: "number", default: 0.6 }, // brighter
+
+          roughness: { type: "number", default: 0.6 },
           metalness: { type: "number", default: 0.0 },
 
           outline: { type: "boolean", default: true },
           outlineColor: { type: "color", default: "#303E73" },
-          outlineThickness: { type: "number", default: 0.035 }, // ~3.5% scale up
-          outlineOpacity: { type: "number", default: 1.0 }
+          outlineThickness: { type: "number", default: 0.03 }, // scale-up amount
+          outlineOpacity: { type: "number", default: 1.0 },
+
+          debug: { type: "boolean", default: false }
         },
 
         init() {
@@ -154,13 +154,26 @@
           const root = this.el.getObject3D("mesh");
           if (!root) return;
 
-          const data = this.data;
+          const d = this.data;
+
+          // Collect meshes BEFORE we add outline children (prevents recursion).
+          const meshes = [];
+          root.traverse((obj) => {
+            if (!obj || !obj.isMesh) return;
+            if (obj.userData && obj.userData.__isOutline) return; // skip outlines
+            meshes.push(obj);
+          });
+
+          if (d.debug) {
+            console.log("[gltf-style] meshes:", meshes.length);
+            if (meshes[0]) console.log("[gltf-style] first isSkinnedMesh:", !!meshes[0].isSkinnedMesh);
+          }
 
           const outlineMat = new THREE.MeshBasicMaterial({
-            color: new THREE.Color(data.outlineColor),
+            color: new THREE.Color(d.outlineColor),
             side: THREE.BackSide,
-            transparent: data.outlineOpacity < 1.0,
-            opacity: data.outlineOpacity,
+            transparent: d.outlineOpacity < 1.0,
+            opacity: d.outlineOpacity,
             depthTest: true,
             depthWrite: true,
             polygonOffset: true,
@@ -168,74 +181,58 @@
             polygonOffsetUnits: 1
           });
 
-          root.traverse((obj) => {
-            if (!obj.isMesh) return;
+          const white = new THREE.Color(d.color);
+          const emis = new THREE.Color(d.emissive);
 
-            // --- Bright white override ---
-            // Clone material so we don't affect shared instances
-            const mat = (obj.material && obj.material.clone) ? obj.material.clone() : obj.material;
-
-            // If it's an array of materials
-            if (Array.isArray(mat)) {
-              obj.material = mat.map(m => this._tintMaterial(m.clone ? m.clone() : m, data));
+          for (const obj of meshes) {
+            // 1) Force bright white
+            if (Array.isArray(obj.material)) {
+              obj.material = obj.material.map((m) => this._tintMaterial(m, white, emis, d));
             } else {
-              obj.material = this._tintMaterial(mat, data);
+              obj.material = this._tintMaterial(obj.material, white, emis, d);
             }
+            if (obj.material) obj.material.needsUpdate = true;
 
-            obj.material.needsUpdate = true;
-
-            // --- Outline ---
-            if (!data.outline) return;
-
-            // Avoid outlining the background circle if you ever add this component elsewhere.
-            if (obj.name && obj.name.toLowerCase().includes("bgcircle")) return;
-
-            // Don't add duplicate outlines if reloaded
-            if (obj.userData.__hasOutline) return;
+            // 2) Outline
+            if (!d.outline) continue;
+            if (obj.userData.__hasOutline) continue;
             obj.userData.__hasOutline = true;
 
             let outlineMesh;
-
             if (obj.isSkinnedMesh) {
-              // SkinnedMesh needs skeleton binding to follow animation.
               outlineMesh = new THREE.SkinnedMesh(obj.geometry, outlineMat);
               outlineMesh.bind(obj.skeleton, obj.bindMatrix);
             } else {
               outlineMesh = new THREE.Mesh(obj.geometry, outlineMat);
             }
 
+            outlineMesh.userData.__isOutline = true;
             outlineMesh.frustumCulled = false;
             outlineMesh.renderOrder = (obj.renderOrder || 0) - 1;
-
-            // As child at origin so it tracks transforms automatically
-            outlineMesh.position.set(0, 0, 0);
-            outlineMesh.rotation.set(0, 0, 0);
-            outlineMesh.scale.set(1 + data.outlineThickness, 1 + data.outlineThickness, 1 + data.outlineThickness);
+            outlineMesh.scale.set(1 + d.outlineThickness, 1 + d.outlineThickness, 1 + d.outlineThickness);
 
             obj.add(outlineMesh);
-          });
+          }
         },
 
-        _tintMaterial(mat, data) {
+        _tintMaterial(mat, white, emis, d) {
           if (!mat) return mat;
 
-          // Make it bright white-ish regardless of original
-          if (mat.color) mat.color.set(data.color);
+          // Clone so we don't mutate shared materials
+          const m = mat.clone ? mat.clone() : mat;
 
-          // PBR materials: push brightness via emissive
-          if ("emissive" in mat && mat.emissive) {
-            mat.emissive.set(data.emissive);
-            mat.emissiveIntensity = data.emissiveIntensity;
+          if (m.color) m.color.copy(white);
+
+          // PBR emissive brightening
+          if ("emissive" in m && m.emissive) {
+            m.emissive.copy(emis);
+            m.emissiveIntensity = d.emissiveIntensity;
           }
 
-          if ("roughness" in mat) mat.roughness = data.roughness;
-          if ("metalness" in mat) mat.metalness = data.metalness;
+          if ("roughness" in m) m.roughness = d.roughness;
+          if ("metalness" in m) m.metalness = d.metalness;
 
-          // If you want *pure unlit white* (ignoring lights), uncomment:
-          // const unlit = new THREE.MeshBasicMaterial({ color: new THREE.Color(data.color) });
-          // return unlit;
-
-          return mat;
+          return m;
         }
       });
     </script>
@@ -249,10 +246,7 @@
       renderer="colorManagement: true; physicallyCorrectLights: true;"
     >
       <a-assets timeout="300000">
-        <!-- Texture for the 3D fading circle -->
         <canvas id="fadeCircleTex" width="512" height="512"></canvas>
-
-        <!-- Put Metronome.glb in ./models/ on your GitHub Pages site -->
         <a-asset-item id="metronomeModel" src="./models/Metronome.glb" crossorigin="anonymous"></a-asset-item>
       </a-assets>
 
@@ -262,11 +256,10 @@
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
       <a-entity mindar-image-target="targetIndex: 0">
-
         <!-- 3D background circle behind the metronome -->
         <a-entity
           id="bgCircle"
-          geometry="primitive: circle; radius: 0.7; segments: 64"
+          geometry="primitive: circle; radius: 1.5; segments: 64"
           material="shader: flat; src: #fadeCircleTex; transparent: true; side: double; alphaTest: 0.01; depthWrite: false"
           position="0 0 -0.05"
           rotation="0 0 0"
@@ -282,13 +275,14 @@
           gltf-style="
             color: #FFFFFF;
             emissive: #FFFFFF;
-            emissiveIntensity: 0.35;
-            roughness: 0.55;
+            emissiveIntensity: 0.6;
+            roughness: 0.6;
             metalness: 0.0;
             outline: true;
             outlineColor: #303E73;
-            outlineThickness: 0.035;
+            outlineThickness: 0.03;
             outlineOpacity: 1.0;
+            debug: false;
           "
           gltf-clip-player="
             clip: MetronomeSwing;
@@ -296,10 +290,9 @@
             timeScale: 1;
             restartOnFound: true;
             pauseOnLost: true;
-            debug: false;
+            debug: true;
           "
         ></a-entity>
-
       </a-entity>
     </a-scene>
   </body>
