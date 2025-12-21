@@ -130,10 +130,10 @@
       renderer="colorManagement: true; physicallyCorrectLights: true;"
     >
       <a-assets timeout="300000">
-        <!-- Put Monet_BakedExport.glb in ./models/ on your GitHub Pages site -->
+        <!-- Put Metronome.glb in ./models/ on your GitHub Pages site -->
         <a-asset-item
           id="bakedModel"
-          src="./models/Monet_BakedExport.glb"
+          src="./models/Metronome.glb"
           crossorigin="anonymous"
         ></a-asset-item>
       </a-assets>
@@ -149,9 +149,9 @@
           gltf-model="#bakedModel"
           position="0 0 0"
           rotation="0 0 0"
-          scale="2 2 2"
+          scale="1 1 1"
           gltf-clip-player="
-            clip: Cube(Clone)_20251216_122932_MorphSeq_Clip;
+            clip: MetronomeSwing;
             loop: repeat;
             timeScale: 1;
             restartOnFound: true;
