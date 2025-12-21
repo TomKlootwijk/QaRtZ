@@ -16,15 +16,38 @@
     </style>
 
     <script>
+      // Build a radial fade texture in #425695 -> transparent, drawn once.
+      function buildFadeCircleTexture() {
+        const c = document.getElementById("fadeCircleTex");
+        if (!c) return;
+        const ctx = c.getContext("2d");
+        const w = c.width, h = c.height;
+        const cx = w / 2, cy = h / 2;
+        const r = Math.min(w, h) / 2;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // Hex: 425695 => rgb(66, 86, 149)
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        grad.addColorStop(0.00, "rgba(66, 86, 149, 1)");
+        grad.addColorStop(0.45, "rgba(66, 86, 149, 1)");
+        grad.addColorStop(1.00, "rgba(66, 86, 149, 0)");
+
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      document.addEventListener("DOMContentLoaded", buildFadeCircleTexture);
+
       // Plays a named glTF clip using THREE.AnimationMixer (no aframe-extras dependency).
       AFRAME.registerComponent("gltf-clip-player", {
         schema: {
-          clip: { type: "string", default: "" },         // exact clip name, or "" for first
-          loop: { type: "string", default: "repeat" },   // repeat | once
+          clip: { type: "string", default: "" },
+          loop: { type: "string", default: "repeat" },
           timeScale: { type: "number", default: 1 },
           restartOnFound: { type: "boolean", default: true },
           pauseOnLost: { type: "boolean", default: true },
-          debug: { type: "boolean", default: true }
+          debug: { type: "boolean", default: false }
         },
 
         init() {
@@ -45,11 +68,9 @@
               if (this.data.pauseOnLost) this._playing = false;
             });
 
-            // start paused until found
-            this._playing = false;
+            this._playing = false; // start paused until found
           } else {
-            // no marker parent -> autoplay
-            this._playing = true;
+            this._playing = true;  // autoplay without marker
           }
 
           this.el.addEventListener("model-loaded", () => {
@@ -57,9 +78,7 @@
             if (!this._model) return;
 
             const clips = this._model.animations || [];
-            if (this.data.debug) {
-              console.log("[gltf-clip-player] clips:", clips.map(c => c.name));
-            }
+            if (this.data.debug) console.log("[gltf-clip-player] clips:", clips.map(c => c.name));
 
             let clip = null;
             const want = (this.data.clip || "").trim();
@@ -69,11 +88,6 @@
             if (!clip) {
               console.warn("[gltf-clip-player] No animation clips found in model.");
               return;
-            }
-
-            if (want.length && !clips.find(c => c.name === want)) {
-              console.warn("[gltf-clip-player] Requested clip not found:", want);
-              console.warn("[gltf-clip-player] Available:", clips.map(c => c.name));
             }
 
             this.mixer = new THREE.AnimationMixer(this._model);
@@ -88,17 +102,13 @@
 
             this.action.play();
 
-            // If we’re starting paused (waiting for marker), freeze at time 0.
-            if (!this._playing) {
-              this.mixer.setTime(0);
-            }
+            if (!this._playing) this.mixer.setTime(0);
           });
         },
 
         tick(time, timeDelta) {
           if (!this.mixer || !this.action) return;
           if (!this._playing) return;
-
           const dt = (timeDelta / 1000) * (this.data.timeScale || 1);
           if (dt > 0) this.mixer.update(dt);
         },
@@ -130,12 +140,11 @@
       renderer="colorManagement: true; physicallyCorrectLights: true;"
     >
       <a-assets timeout="300000">
+        <!-- Texture for the 3D fading circle -->
+        <canvas id="fadeCircleTex" width="512" height="512"></canvas>
+
         <!-- Put Metronome.glb in ./models/ on your GitHub Pages site -->
-        <a-asset-item
-          id="bakedModel"
-          src="./models/Metronome.glb"
-          crossorigin="anonymous"
-        ></a-asset-item>
+        <a-asset-item id="metronomeModel" src="./models/Metronome.glb" crossorigin="anonymous"></a-asset-item>
       </a-assets>
 
       <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
@@ -144,11 +153,22 @@
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
       <a-entity mindar-image-target="targetIndex: 0">
+
+        <!-- 3D background circle behind the metronome -->
         <a-entity
-          id="artpiece"
-          gltf-model="#bakedModel"
-          position="0 0 0"
+          id="bgCircle"
+          geometry="primitive: circle; radius: 0.7; segments: 64"
+          material="shader: flat; src: #fadeCircleTex; transparent: true; side: double; alphaTest: 0.01; depthWrite: false"
+          position="0 0 -0.05"
           rotation="0 0 0"
+        ></a-entity>
+
+        <!-- Metronome -->
+        <a-entity
+          id="metronome"
+          gltf-model="#metronomeModel"
+          position="0 0 0"
+          rotation="0 180 0"
           scale="1 1 1"
           gltf-clip-player="
             clip: MetronomeSwing;
@@ -156,9 +176,10 @@
             timeScale: 1;
             restartOnFound: true;
             pauseOnLost: true;
-            debug: true;
+            debug: false;
           "
         ></a-entity>
+
       </a-entity>
     </a-scene>
   </body>
